@@ -1,0 +1,73 @@
+#include "mbed.h"
+#include "QEI.h"
+#include "C12832.h" 
+
+
+DigitalOut enable(PB_4);
+
+//Motor 2-Left Wheel
+//Duty Cycle: Forward-- >50%
+DigitalOut motor2_bipolar1(PB_3);
+PwmOut motor2_pwm1(PC_8);
+
+
+C12832 lcd(D11, D13, D12, D7, D10); 
+
+//Motor 1-Right Wheel
+//Duty Cycle: Forward-- <50%
+DigitalOut motor1_bipolar2(PB_5);
+PwmOut motor1_pwm2(PC_6);
+
+
+QEI wheel (PB_10, PA_8, NC ,512); //encoder for wheel 
+//QEI (PinName channelA, PinName channelB, PinName index, int pulsesPerRev, Encoding encoding=X2_ENCODING)
+
+int main() {
+    enable = 1;
+
+    motor2_bipolar1 = 1;
+    motor1_bipolar2 = 1; 
+
+    motor1_pwm2.period(0.001f);
+    motor1_pwm2.write(0.5f);
+     
+    motor2_pwm1.period(0.001f);
+    motor2_pwm1.write(0.5f);
+
+
+    wait(2);
+    motor1_pwm2.write(0.45f); 
+    motor2_pwm1.write(0.55f);
+
+    wait(2);
+
+    motor1_pwm2.write(0.55f); 
+    motor2_pwm1.write(0.45f);
+
+    wait(2);
+
+    motor1_pwm2.write(0.75f); 
+    motor2_pwm1.write(0.25f);
+
+    wait(2);
+
+    motor1_pwm2.write(0.65f); 
+    motor2_pwm1.write(0.65f);
+
+    wait(2);
+
+    motor1_pwm2.write(0.45f); 
+    motor2_pwm1.write(0.45f);
+
+
+
+
+
+
+    wait(2);
+         
+    lcd.cls();
+    lcd.locate(20,0);
+    lcd.printf("Pulses is: %d\n", wheel.getPulses());
+    wait(2);
+}

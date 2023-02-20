@@ -1,0 +1,144 @@
+#include "mbed.h"
+#include "C12832.h"
+#include "QEI.h"
+
+// Sets up the GPIO as output
+DigitalOut enable(PB_4); 
+
+// Sets up the centre button
+InterruptIn centre(D4);
+
+// Motor 2 - Left Wheel (Duty Cycle: Forward-- >50%)
+DigitalOut motor2_bipolar1(PB_3);
+PwmOut motor2_pwm1(PC_8);
+
+// Motor 1 - Right Wheel (Duty Cycle: Forward-- <50%)
+DigitalOut motor1_bipolar2(PB_5);
+PwmOut motor1_pwm2(PC_6);
+
+// Encoder (QEI (PinName channelA, PinName channelB, PinName index, int pulsesPerRev, Encoding encoding = X2_ENCODING))
+QEI wheel_2 (PC_4, PB_1, NC, 512); 
+QEI wheel_1 (PC_2, PC_3,NC, 512);
+
+// Potentiometer class 
+class Potentiometer {
+
+private:
+
+    AnalogIn inputSignal;
+
+    float VDD, currentSampleNorm, currentSampleVolts;
+
+public:         
+
+    Potentiometer(PinName pin, float v) : inputSignal(pin), VDD(v) {}
+
+    float amplitudeVolts(void) {
+
+        return (inputSignal.read()*VDD);
+
+    }
+    
+    float amplitudeNorm(void) {
+
+        return inputSignal.read();
+
+    }
+    
+    void sample(void) {
+
+        currentSampleNorm = inputSignal.read();
+
+        currentSampleVolts = currentSampleNorm * VDD;
+
+    }
+    
+    float getCurrentSampleVolts(void) {
+
+        return currentSampleVolts;
+
+    }
+    
+    float getCurrentSampleNorm(void) {
+
+        return currentSampleNorm;
+
+    }
+
+};
+
+// SamplingPotentiometer inherits from Potentiometer class while adding extended functionality of having sampling rate
+class SamplingPotentiometer : public Potentiometer {
+
+    private: 
+
+    float samplingFrequency, samplingPeriod;
+
+    Ticker sampler;
+
+    public:
+
+    SamplingPotentiometer(PinName p, float v, float fs) : Potentiometer(p, v), samplingFrequency(fs) {sampler.attach(callback(this, &SamplingPotentiometer :: sample), 1/fs);}
+
+};
+
+// Routine to be executed on a button press
+void fireISR() {
+
+    enable = !(enable);
+
+}
+
+int main() {
+
+    // Variables for encoder calculations 
+    float tickRate_1, tickRate_2, wheelvelocity_1, wheelvelocity_2, sampleTime = 0.2;
+    int currTicks_1 = 0, prevTicks_1 = 0, currTicks_2 = 0, prevTicks_2 = 0;
+
+    // LCD screen instantiation
+    C12832 lcd(D11, D13, D12, D7, D10); 
+
+    // Potentiometer declarations
+    SamplingPotentiometer left(A0, 1, 60);
+    SamplingPotentiometer right(A1, 1, 60);
+
+    // Drive board enabled
+    enable = 0;
+
+    // Motor 1 and motor 2 set to bipolar mode
+    motor2_bipolar1 = 1;
+    motor1_bipolar2 = 1; 
+
+    // PWM frequency is set to 1000 Hz
+    motor1_pwm2.period(0.001f);
+    motor2_pwm1.period(0.001f);
+
+    while(1) {
+
+        // Links the button press to the respective routine
+        centre.rise(&fireISR);
+
+        // PWM signal generated from readings from potentiometer
+	    motor1_pwm2.write(1-(right.getCurrentSampleVolts()));
+	    motor2_pwm1.write(left.getCurrentSampleVolts());
+
+        // Calculates wheel 1 velocity
+        wait(sampleTime);
+        currTicks_1 = wheel_1.getPulses();
+        tickRate_1 = float((currTicks_1 - prevTicks_1))/sampleTime;
+        prevTicks_1 = currTicks_1;
+        wheelvelocity_1 = -(tickRate_1*0.0077*3.14/512);
+
+        // Calculates wheel 2 velocity
+        currTicks_2 = wheel_2.getPulses();
+        tickRate_2 = float((currTicks_2 - prevTicks_2))/sampleTime;
+        prevTicks_2 = currTicks_2;  
+        wheelvelocity_2 = tickRate_2*0.0077*3.14/512;
+    
+        // Sets up the LCD display of encoder values
+        lcd.locate(20,0);
+        lcd.printf("Wheel Velocity 1: %.3f/nWheel Velocity 2: %.3f", wheelvelocity_1, wheelvelocity_2);
+        
+    }   
+
+}

@@ -1,0 +1,214 @@
+#include "mbed.h"
+#include "C12832.h"
+
+C12832 lcd(D11, D13, D12, D7, D10);
+
+#include "QEI.h"
+
+DigitalOut enable(PB_4);
+
+//Motor 2-Left Wheel
+//Duty Cycle: Forward-- >50%
+DigitalOut motor2_bipolar1(PB_3);
+PwmOut motor2_pwm1(PC_8);
+
+//Motor 1-Right Wheel
+//Duty Cycle: Forward-- <50%
+DigitalOut motor1_bipolar2(PB_5);
+PwmOut motor1_pwm2(PC_6);
+
+//Encoder
+//QEI (PinName channelA, PinName channelB, PinName index, int pulsesPerRev, Encoding encoding = X2_ENCODING)
+QEI wheel_2 (PC_4, PB_1, NC, 512); 
+QEI wheel_1 (PC_2, PC_3,NC, 512);
+volatile int encoder;
+    float tickRate_1,tickRate_2,wheelvelocity_1,wheelvelocity_2;
+    float sampleTime = 0.2;
+    int currTicks_1 = 0, prevTicks_1 = 0,currTicks_2 = 0, prevTicks_2 = 0;
+int main() {
+
+    C12832 lcd(D11, D13, D12, D7, D10); 
+
+
+    enable = 1;
+
+    motor2_bipolar1 = 1;
+    motor1_bipolar2 = 1; 
+
+    motor1_pwm2.period(0.001f);
+    motor1_pwm2.write(0.5f);
+     
+    motor2_pwm1.period(0.001f);
+    motor2_pwm1.write(0.5f);
+
+
+        //wait(sampleTime);
+        currTicks_1 = wheel_1.getPulses();
+        tickRate_1 = float((currTicks_1-prevTicks_1))/sampleTime;
+        prevTicks_1 = currTicks_1;
+        wheelvelocity_1 =-(tickRate_1*0.0077*3.14/512) ;
+        //accroding to the equations on handbook,above shows the flow to calculate the wheel 1 speed
+
+        currTicks_2 = wheel_2.getPulses();
+        tickRate_2 = float((currTicks_2-prevTicks_2))/sampleTime;
+        prevTicks_2 = currTicks_2;  
+        wheelvelocity_2 =tickRate_2*0.0077*3.14/512;
+        //accroding to the equations on handbook,above shows the flow to calculate the wheel 2 speed
+
+        lcd.cls();
+        lcd.locate(20,0);
+        lcd.printf("Wheel Velocity 1: %f", wheelvelocity_1);
+        lcd.locate(20,20);
+        lcd.printf("Wheel Velocity 2: %f", wheelvelocity_2);
+     
+    wait(2);
+
+    motor1_pwm2.write(0.45f); 
+    motor2_pwm1.write(0.55f);
+    
+
+        //wait(sampleTime);
+        currTicks_1 = wheel_1.getPulses();
+        tickRate_1 = float((currTicks_1-prevTicks_1))/sampleTime;
+        prevTicks_1 = currTicks_1;
+        wheelvelocity_1 =-(tickRate_1*0.0077*3.14/512) ;
+        //accroding to the equations on handbook,above shows the flow to calculate the wheel 1 speed
+
+        currTicks_2 = wheel_2.getPulses();
+        tickRate_2 = float((currTicks_2-prevTicks_2))/sampleTime;
+        prevTicks_2 = currTicks_2;  
+        wheelvelocity_2 =tickRate_2*0.0077*3.14/512;
+        //accroding to the equations on handbook,above shows the flow to calculate the wheel 2 speed
+
+        lcd.cls();
+        lcd.locate(20,0);
+        lcd.printf("Wheel Velocity 1: %f", wheelvelocity_1);
+        lcd.locate(20,20);
+        lcd.printf("Wheel Velocity 2: %f", wheelvelocity_2);
+       
+    wait(2);
+
+    motor1_pwm2.write(0.55f); 
+    motor2_pwm1.write(0.45f);
+    
+
+        //wait(sampleTime);
+        currTicks_1 = wheel_1.getPulses();
+        tickRate_1 = float((currTicks_1-prevTicks_1))/sampleTime;
+        prevTicks_1 = currTicks_1;
+        wheelvelocity_1 =-(tickRate_1*0.0077*3.14/512) ;
+        //accroding to the equations on handbook,above shows the flow to calculate the wheel 1 speed
+
+        currTicks_2 = wheel_2.getPulses();
+        tickRate_2 = float((currTicks_2-prevTicks_2))/sampleTime;
+        prevTicks_2 = currTicks_2;  
+        wheelvelocity_2 =tickRate_2*0.0077*3.14/512;
+        //accroding to the equations on handbook,above shows the flow to calculate the wheel 2 speed
+
+        lcd.cls();
+        lcd.locate(20,0);
+        lcd.printf("Wheel Velocity 1: %f", wheelvelocity_1);
+        lcd.locate(20,20);
+        lcd.printf("Wheel Velocity 2: %f", wheelvelocity_2);
+       
+    wait(2);
+
+    motor1_pwm2.write(0.75f); 
+    motor2_pwm1.write(0.25f);
+    
+        //wait(sampleTime);
+        currTicks_1 = wheel_1.getPulses();
+        tickRate_1 = float((currTicks_1-prevTicks_1))/sampleTime;
+        prevTicks_1 = currTicks_1;
+        wheelvelocity_1 =-(tickRate_1*0.0077*3.14/512) ;
+        //accroding to the equations on handbook,above shows the flow to calculate the wheel 1 speed
+
+        currTicks_2 = wheel_2.getPulses();
+        tickRate_2 = float((currTicks_2-prevTicks_2))/sampleTime;
+        prevTicks_2 = currTicks_2;  
+        wheelvelocity_2 =tickRate_2*0.0077*3.14/512;
+        //accroding to the equations on handbook,above shows the flow to calculate the wheel 2 speed
+
+        lcd.cls();
+        lcd.locate(20,0);
+        lcd.printf("Wheel Velocity 1: %f", wheelvelocity_1);
+        lcd.locate(20,20);
+        lcd.printf("Wheel Velocity 2: %f", wheelvelocity_2);
+      
+    wait(2);
+
+    motor1_pwm2.write(0.65f); 
+    motor2_pwm1.write(0.65f);
+    
+
+        //wait(sampleTime);
+        currTicks_1 = wheel_1.getPulses();
+        tickRate_1 = float((currTicks_1-prevTicks_1))/sampleTime;
+        prevTicks_1 = currTicks_1;
+        wheelvelocity_1 =-(tickRate_1*0.0077*3.14/512) ;
+        //accroding to the equations on handbook,above shows the flow to calculate the wheel 1 speed
+
+        currTicks_2 = wheel_2.getPulses();
+        tickRate_2 = float((currTicks_2-prevTicks_2))/sampleTime;
+        prevTicks_2 = currTicks_2;  
+        wheelvelocity_2 =tickRate_2*0.0077*3.14/512;
+        //accroding to the equations on handbook,above shows the flow to calculate the wheel 2 speed
+
+        lcd.cls();
+        lcd.locate(20,0);
+        lcd.printf("Wheel Velocity 1: %f", wheelvelocity_1);
+        lcd.locate(20,20);
+        lcd.printf("Wheel Velocity 2: %f", wheelvelocity_2);
+       
+    wait(2);
+
+    motor1_pwm2.write(0.45f); 
+    motor2_pwm1.write(0.45f);
+
+
+        //wait(sampleTime);
+        currTicks_1 = wheel_1.getPulses();
+        tickRate_1 = float((currTicks_1-prevTicks_1))/sampleTime;
+        prevTicks_1 = currTicks_1;
+        wheelvelocity_1 =-(tickRate_1*0.0077*3.14/512) ;
+        //accroding to the equations on handbook,above shows the flow to calculate the wheel 1 speed
+
+        currTicks_2 = wheel_2.getPulses();
+        tickRate_2 = float((currTicks_2-prevTicks_2))/sampleTime;
+        prevTicks_2 = currTicks_2;  
+        wheelvelocity_2 =tickRate_2*0.0077*3.14/512;
+        //accroding to the equations on handbook,above shows the flow to calculate the wheel 2 speed
+
+        lcd.cls();
+        lcd.locate(20,0);
+        lcd.printf("Wheel Velocity 1: %f", wheelvelocity_1);
+        lcd.locate(20,20);
+        lcd.printf("Wheel Velocity 2: %f", wheelvelocity_2);
+       
+    wait(2);
+    enable = 0 ;
+
+
+    while(1) {
+
+        wait(sampleTime);
+        currTicks_1 = wheel_1.getPulses();
+        tickRate_1 = float((currTicks_1-prevTicks_1))/sampleTime;
+        prevTicks_1 = currTicks_1;
+        wheelvelocity_1 =-(tickRate_1*0.0077*3.14/512) ;
+        //accroding to the equations on handbook,above shows the flow to calculate the wheel 1 speed
+
+        currTicks_2 = wheel_2.getPulses();
+        tickRate_2 = float((currTicks_2-prevTicks_2))/sampleTime;
+        prevTicks_2 = currTicks_2;  
+        wheelvelocity_2 =tickRate_2*0.0077*3.14/512;
+        //accroding to the equations on handbook,above shows the flow to calculate the wheel 2 speed
+
+        lcd.cls();
+        lcd.locate(20,0);
+        lcd.printf("Wheel Velocity 1: %f", wheelvelocity_1);
+        lcd.locate(20,20);
+        lcd.printf("Wheel Velocity 2: %f", wheelvelocity_2);
+    }   
+
+}

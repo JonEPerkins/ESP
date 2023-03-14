@@ -1,0 +1,119 @@
+
+#include "mbed.h"
+#include "C12832.h" 
+
+class LED{
+    protected: 
+        DigitalOut outputSignal;
+        bool status;
+
+    public: 
+        LED(PinName pin) : outputSignal(pin){off();}
+
+        void on(void)
+        {
+            outputSignal = 0;
+            status = true;
+        }
+
+         void off(void)
+        {
+            outputSignal = 1;
+            status = false;
+        }
+
+        void toggle(void)
+        {
+            if(status){
+                off();
+            }
+            else{
+                on();
+            }
+        }
+
+        bool getStatus(void)
+        {
+            return status;
+        }
+    };
+
+LED led(D5);
+C12832 lcd(D11, D13, D12, D7, D10); 
+
+
+AnalogIn reading1(PC_4);
+AnalogIn reading2(PC_5);
+AnalogIn reading3(PA_4);
+AnalogIn reading4(PB_0);
+AnalogIn reading5(PC_1);
+AnalogIn reading6(PC_0);
+
+
+int main() {
+    led.off();
+
+    while(1) {  
+            wait(1);
+            float value = reading1.read();   
+            float value2 = reading2.read();       
+            float value3 = reading3.read();   
+            float value4 = reading4.read();       
+            float value5 = reading5.read();   
+            float value6 = reading6.read();                       //Clear the screen  
+            lcd.cls();
+            lcd.locate(00,00);                  //Locate at (64,20)
+            lcd.printf("%.3f      %.3f\n%.3f      %.3f\n%.3f      %.3f", value, value2, value3, value4, value5, value6);
+            
+            led.on();
+        }
+
+    }
+
+/*
+#include <mbed.h>
+
+
+Serial hm10(PA_11, PA_12); //UART6 TX,RX
+
+
+DigitalOut led(D5);
+
+bool c; //the character we want to receive
+
+int main() {
+  hm10.baud(9600);
+
+  while(1) {
+    if(hm10.readable()){
+        c = hm10.getc(); //read a single character
+        if(c == true){
+            led = 0;
+        }
+        else if(c == false){
+            led = 1;
+        }
+    }
+  }
+}
+
+
+DigitalOut led(D5);
+
+int code; //the unsigned int we want to receive
+
+int main() {
+  hm10.baud(9600);
+
+  while(1) {
+    if(hm10.readable()){
+        code = hm10.getc(); //read a single character
+        if(code == 5){
+            led = 0;
+        }
+        else if(code == 10){
+            led = 1;
+        }
+    }
+  }
+}*/

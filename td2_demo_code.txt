@@ -1,0 +1,178 @@
+#include "mbed.h"
+#include "C12832.h" 
+
+class LED { //lifht emmittibg diode :p
+
+    protected: 
+
+        DigitalOut outputSignal;
+        bool status;
+
+    public: 
+
+        LED(PinName pin) : outputSignal(pin){off();}
+
+        void on(void) {
+
+            outputSignal = 0;
+            status = true;
+
+        }
+
+         void off(void) {
+
+            outputSignal = 1;
+            status = false;
+
+        }
+
+        void toggle(void) {
+
+            if (status) {
+
+                off();
+
+            }
+
+            else {
+
+                on();
+
+            }
+
+        }
+
+        bool getStatus(void) {
+
+            return status;
+
+        }
+
+    };
+
+LED led(D5); //red rbg pin
+C12832 lcd(D11, D13, D12, D7, D10); 
+
+AnalogIn reading1(PC_4);
+AnalogIn reading2(PC_5);
+AnalogIn reading3(PA_4);
+AnalogIn reading4(PB_0);
+AnalogIn reading5(PC_1);
+AnalogIn reading6(PC_0);
+Serial pc(USBTX, USBRX); // TX, RX  - for microcontroller to pc communication
+Serial hm10(PA_11, PA_12); // UART6 TX,RX - bluetooth connection
+
+int main() {
+
+    char code; //data packet for ble sensor
+    hm10.baud(9600);
+
+    while (1) {  
+
+        float th = 0.3; //threshold value
+        float value = reading1.read();   
+        float value2 = reading2.read();       
+        float value3 = reading3.read();   
+        float value4 = reading4.read();       
+        float value5 = reading5.read();   
+        float value6 = reading6.read();   
+        char op1, op2, op3, op4, op5, op6;
+
+        wait(0.1);
+
+        if (hm10.readable()) {
+
+            code = hm10.getc(); // Read a single character
+
+            if (code == 'a') {
+
+                led.on();
+
+            }
+
+            else {
+
+                led.off(); //led off if anything apart from 'a'
+
+            }
+
+        }   
+
+        if (value >= th) {
+            
+            op1 = '|'; //line detetcted
+
+        }
+            
+        else {
+            
+            op1 = '-'; //line not detected
+
+            }
+
+        if (value2 >= th) {
+            
+            op2 = '|';
+
+            }
+            
+        else {
+            
+            op2 = '-';
+
+            }
+
+        if (value3 >= th) {
+            
+            op3 = '|';
+
+            }
+            
+        else {
+            
+            op3 = '-';
+
+            }
+
+        if (value4 >= th) {
+            
+            op4 = '|';
+
+            }
+            
+        else {
+            
+            op4 = '-';
+
+            }
+
+        if (value5 >= th) {
+            
+            op5 = '|';
+
+            }
+            
+        else {
+            
+            op5 = '-';
+
+            }
+
+        if (value6 >= th) {
+            
+            op6 = '|';
+
+            }
+            
+        else {
+            
+            op6 = '-';
+
+            }           
+            
+        lcd.printf("%c  %c  %c  %c  %c  %c\n", op1, op2, op3, op4, op5, op6); //print to lcd
+        pc.printf("%.3f  %.3f  %.3f  %.3f  %.3f  %.3f\n", 3.3*value, 3.3*value2, 3.3*value3, 3.3*value4, 3.3*value5, 3.3*value6);
+         //print to console
+    }
+
+}

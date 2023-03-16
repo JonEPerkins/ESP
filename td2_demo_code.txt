@@ -1,7 +1,7 @@
 #include "mbed.h"
 #include "C12832.h" 
 
-class LED { //lifht emmittibg diode :p
+class LED { // LED class declaration
 
     protected: 
 
@@ -50,26 +50,26 @@ class LED { //lifht emmittibg diode :p
 
     };
 
-LED led(D5); //red rbg pin
+LED led(D5); // Red RGB pin
 C12832 lcd(D11, D13, D12, D7, D10); 
 
-AnalogIn reading1(PC_4);
+AnalogIn reading1(PC_4); // Analogue pins for sensor signals
 AnalogIn reading2(PC_5);
 AnalogIn reading3(PA_4);
 AnalogIn reading4(PB_0);
 AnalogIn reading5(PC_1);
 AnalogIn reading6(PC_0);
-Serial pc(USBTX, USBRX); // TX, RX  - for microcontroller to pc communication
+Serial pc(USBTX, USBRX); // TX, RX - for microcontroller to pc communication
 Serial hm10(PA_11, PA_12); // UART6 TX,RX - bluetooth connection
 
 int main() {
 
-    char code; //data packet for ble sensor
+    char code; // Data packet for BLE sensor
     hm10.baud(9600);
 
     while (1) {  
 
-        float th = 0.3; //threshold value
+        float th = 0.3; // Threshold value chosen to filter out the noise and readings of the black background
         float value = reading1.read();   
         float value2 = reading2.read();       
         float value3 = reading3.read();   
@@ -92,7 +92,7 @@ int main() {
 
             else {
 
-                led.off(); //led off if anything apart from 'a'
+                led.off(); // Led off if anything apart from 'a'
 
             }
 
@@ -100,13 +100,13 @@ int main() {
 
         if (value >= th) {
             
-            op1 = '|'; //line detetcted
+            op1 = '|'; // Line detetcted
 
         }
             
         else {
             
-            op1 = '-'; //line not detected
+            op1 = '-'; // Line not detected
 
             }
 
@@ -170,9 +170,9 @@ int main() {
 
             }           
             
-        lcd.printf("%c  %c  %c  %c  %c  %c\n", op1, op2, op3, op4, op5, op6); //print to lcd
-        pc.printf("%.3f  %.3f  %.3f  %.3f  %.3f  %.3f\n", 3.3*value, 3.3*value2, 3.3*value3, 3.3*value4, 3.3*value5, 3.3*value6);
-         //print to console
+        lcd.printf("     %c  %c  %c  %c  %c  %c\n", op6, op5, op4, op3, op2, op1); // Projects the line image to the screen
+        pc.printf("%.3f  %.3f  %.3f  %.3f  %.3f  %.3f\n", 3.3*value, 3.3*value2, 3.3*value3, 3.3*value4, 3.3*value5, 3.3*value6); // Outputs actual readings from the sensors to the console
+
     }
 
 }

@@ -1,0 +1,31 @@
+int main (){
+    float value, value2, value3, value4, value5, value6;
+    value = 1;
+    value2 = 0;
+    value3 = 0;
+    value4 = 0;
+    value5 = 0;
+    value6 = 0;
+    
+    float kp=0.0002, ki=0, kd=0, dt=0.5, mDiff;
+    float currentError, prevError = 0;
+    float proportional, integral=0, derivative;
+    
+    int count = 1;
+    
+    while (count){
+        float pos = ( (0*value + 1000*value2 + 2000*value3 + 3000*value4 + 4000*value5 + 5000*value6)/(value + value2 + value3 + value4 + value5 + value6));
+        printf("position is %.3f\n", pos); //pos is from 0 to 5000 where 0 is the first sensor and 5000 the last, 2500 is the centre line
+        currentError = pos-2500;
+        printf("error is %.3f\n", currentError);
+        proportional = currentError;
+        integral = integral + currentError * dt;
+        derivative = (currentError-prevError)/dt;
+        mDiff = kp*proportional + ki*integral + kd*derivative;
+        printf("motor diff is %.3f", mDiff);
+        prevError = currentError;
+        // then add half of mDiff to the 0.5 duty cycle of each motor output
+        count -= 1;
+        //wait(dt);
+    }
+}

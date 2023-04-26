@@ -1,0 +1,528 @@
+#include "mbed.h"
+#include "C12832.h"//lcd screen library
+#include "QEI.h"//encoder library
+
+
+// Sets up the GPIO as output
+DigitalOut enable(PB_4); 
+
+C12832 lcd(D11, D13, D12, D7, D10);     //used to see output from the screen
+
+// Motor 2 - RIGHT Wheel 
+DigitalOut motorRIGHT_bipolar1(PB_3);
+PwmOut motorRIGHT(PC_8);
+
+
+// Motor 1 -- LEFT Wheel 
+DigitalOut motorLEFT_bipolar2(PB_5);
+PwmOut motorLEFT(PC_6);
+
+
+
+
+
+
+// Encoder (QEI (PinName channelA, PinName channelB, PinName index, int pulsesPerRev, Encoding encoding = X2_ENCODING))
+QEI RIGHTwheel (PA_0, PA_1, NC, 512); 
+QEI LEFTwheel (PC_2, PC_3,NC, 512);
+
+//Input readings from Line Sensor
+AnalogIn reading1(PC_4);
+AnalogIn reading2(PC_5);
+AnalogIn reading3(PA_4);
+AnalogIn reading4(PB_0);
+AnalogIn reading5(PC_1);
+AnalogIn reading6(PC_0);
+
+
+//BLE Connections and definitions
+Serial hm10(PA_11, PA_12); // UART6 TX,RX - bluetooth connection to buggy
+Serial pc(USBTX, USBRX); // TX, RX - for microcontroller to pc communication
+int StopProcessType; //if the value reads 0, the buggy stops for any reason except BLE trigger
+                    //if the value is 1, it is due to the BLE process being triggered. 
+
+                           
+
+
+//Initial values for the control algorithm
+float kp=0.0004, ki=0.000000, kd=0.000002, dt=0.0035, mDiff, currentError;
+static float prevError = 0;
+float proportional, integral=0, derivative;
+int lineBreakFlag = 0;
+
+
+
+
+//Slope Detection Global Variables
+int count1Right, count1Left, count2Right, count2Left;
+        //count1- first encoder reading
+        //count2 - second encoder reading
+float delta, cycle_val = 0, rate_of_changeRight, rate_of_changeLeft ,avg_counter, running_totalSpeed; 
+        //delta - time delay between encoder readings
+        //cycle_val- counter for number of readings (0.5 per individual reading i.e. 2 readings per cycle so 1 added per cycle in total)
+        //rate_of_change- actual measure of speed of encoders
+        //running_totalSpeed - total of all speed averages between the wheels to determine whether they should be added to the running average
+
+
+
+//End process global variable, called if the buggy wants to stop the run it is currently carrying out. 
+int EndRun = 0;
+int encoderValCurrent = 0; //used to set and reset the value of the encoder when the linebreak function is being carried out
+int encoderValPrevious;
+
+float ControlAlgo(float in1, float in2, float in3, float in4, float in5, float in6){
+        //CONTROL ALGORITHM SHOWN HERE
+        float pos = ( (1*in1 + 1000*in2 + 2000*in3 + 3000*in4 + 4000*in5 + 5000*in6)/(in1 + in2 + in3 + in4 + in5 + in6));
+        //printf("position is %.3f\n", pos); //pos is from 0 to 5000 where 0 is the first sensor and 5000 the last, 2500 is the centre line
+        currentError = pos-2500;
+        //printf("error is %.3f\n", currentError);
+        proportional = currentError;
+        integral = integral + currentError * dt;
+        derivative = (currentError-prevError)/dt;
+        mDiff = kp*proportional + ki*integral + kd*derivative;
+        //printf("motor diff is %.3f\n", mDiff);
+        prevError = currentError;
+        wait(dt);
+        return mDiff;
+};
+
+
+void BLE_180(){//interrupt process called and stopppingprocess carried out.                                   
+                    //if the stopping process was called by the interrupt this function is called 
+                    //to turn the vehicle around. 
+
+//             float turnpwmval = 0.1;//value to turn the wheel by, will depend on whether it reaches a 90 degree turning point by the time of rotation. 
+//             int count = 0;
+//             for(int i = 0; i< 229; i++){//229 is number of pulses to turn the wheel by to move it by 90 degrees.
+//                 motorLEFT.write(0.5+turnpwmval);
+//                 motorRIGHT.write(0.5+turnpwmval);
+//             }
+//             //after turning by 90 degrees stop the turning process
+//             motorLEFT.write(0.5);
+//             motorRIGHT.write(0.5);
+
+//         //To measure the point where the line is being read AGAIN, rotate by 90 degrees first AND THEN being loop to read line in reverse direction
+        
+//         float pwmout = 1;//set to maximum differential before starting while loop
+
+//         while(pwmout > 0.05){
+//             float value = reading1.read();   
+//             float value2 = reading2.read();       
+//             float value3 = reading3.read();   
+//             float value4 = reading4.read();       
+//             float value5 = reading5.read();   
+//             float value6 = reading6.read();
+//             motorLEFT.write(0.5+turnpwmval);
+//             motorRIGHT.write(0.5+turnpwmval);
+//             pwmout = ControlAlgo(value, value2, value3, value4, value5, value6);
+//         }
+//         //create a while loop to measure the line sensor until the value is close to the middle, i.e. 0 differential value
+//         motorLEFT.write(0.5+turnpwmval);//stop both wheels
+//         motorRIGHT.write(0.5+turnpwmval);
+//         //(the middle point). Once that point has been detected, leave the while loop and return to 
+//         //the main code. 
+        motorLEFT.write(0.65);//stop right wheel
+	    motorRIGHT.write(0.3);//stop left wheel
+        wait(0.925);
+        motorLEFT.write(0.50);//stop right wheel
+	    motorRIGHT.write(0.50);//stop left wheel
+    };
+
+
+
+
+void StoppingProcess(int stopvalue = 0){//called if the BLE proceess is triggered or the line break function has ended.      
+                                        //By default it is set to zero to expect it to be stopping for other reasons than the BLE trigger
+    motorLEFT.write(0.5);//stop right wheel
+	motorRIGHT.write(0.5);//stop left wheel
+
+    if (stopvalue == 1){
+        stopvalue = 0;  //resets value for next run or when stopping process is needed again
+        lcd.cls();                          //Clear the screen
+        lcd.locate(20,10);                   //Locate at (20,0)
+        lcd.printf("BLE process triggered"); //Print text
+        BLE_180();
+    }
+    else{
+        EndRun = 1; //stops the buggy operating as it reaches the end of the line due to a line break that is the end of the line. 
+    }
+};
+
+
+
+
+
+void WheelControl(float pwmvalue){
+    //PWM OUTPUT TO WHEELS GOES HERE--half of the pwm output goes to each wheel to provide differential steering.
+    // float diffSteer = pwmvalue;
+    
+    // if (pwmvalue>0.5){
+    //     diffSteer=0.5;
+    // }
+
+    // else if (pwmvalue<-0.5){
+    //     diffSteer=-0.5;
+    // }
+
+    // if(diffSteer < 0){
+    //     motorLEFT.write(0.62+(diffSteer*1/2));
+    //     motorRIGHT.write(0.62-(diffSteer*1/2));
+    // }
+        
+    // else if(diffSteer > 0){
+    //     motorLEFT.write(0.62+(diffSteer*1/2));
+    //     motorRIGHT.write(0.62-(diffSteer*1/2));
+    // }
+
+    // else{
+    //     motorRIGHT.write(0.62);
+    //     motorLEFT.write(0.62);
+    // }
+
+
+
+    //motorLEFT.write(0.5+diffSteer);
+	//motorRIGHT.write(0.5+diffSteer);
+}
+
+
+ void LineBreakFunction(){                                                                               
+    //initiate process of reading circumference of wheel. 
+    if(encoderValPrevious == 0){
+        encoderValPrevious = RIGHTwheel.getPulses();//starts reading the value of the encoder
+    }
+    else{
+        encoderValCurrent = RIGHTwheel.getPulses();
+        if ((encoderValCurrent-encoderValPrevious) >= 500){}
+        StoppingProcess();//distance travelled reading the line is over 6mm so the buggy stops operating on the next iteration of the 
+                    //while loop within the main function  as the condition is met.
+        }
+    }
+
+
+void timeoutLineBreak(){
+    float value = reading1.read();   
+    float value2 = reading2.read();       
+    float value3 = reading3.read();   
+    float value4 = reading4.read();       
+    float value5 = reading5.read();   
+    float value6 = reading6.read();                     
+    float mean = (value+ value2+ value3+ value4+ value5+ value6)/6;
+    if (mean<0.3){
+        StoppingProcess();
+        
+    }
+    else 
+        lineBreakFlag = 0;
+}
+
+
+// float SlopeDetection(QEI wheel){//measure the speed of the wheel and determine if it is going                      
+// //up or down a slope or is on flat ground
+// //return to while loop to determine what to do next
+//         cycle_val += 0.5;
+//         count1 = wheel.getPulses();//gets number of pulses
+//         wait(0.01); //delay time delta
+//         count2 = wheel.getPulses();//gets number of pulses 
+//         delta = 0.01; //time interval declared here
+//         rate_of_change = (count2 - count1) / dt; //measures speed of right wheel
+//         pc.printf("Count1: %f   Count2: %f  Rate of Change: %f", count1, count2, rate_of_change);
+//         return rate_of_change;
+// }
+
+
+
+
+int main() {
+    Timeout myTimeout;
+    
+    int i = 0;
+    char code; // Data packet for BLE sensor
+    hm10.baud(9600);
+    while(i == 0){
+        
+        //Initial Configuration of Motor+Wheels
+        // Drive board enabled
+        enable = 1;
+        // Motor 1 and motor 2 set to bipolar mode
+        motorRIGHT_bipolar1 = 1;
+        motorLEFT_bipolar2 = 1; 
+        // PWM frequency is set to 1000 Hz
+        motorLEFT.period(0.001f);
+        motorRIGHT.period(0.001f);
+
+        motorLEFT.write(0.5);
+        motorRIGHT.write(0.5);
+    
+
+        wait(1);
+        //Begin while loop when initial reading of line has been detected               <-----
+        //i.e when reading is close to 2500
+        float value = reading1.read();   
+        float value2 = reading2.read();       
+        float value3 = reading3.read();   
+        float value4 = reading4.read();       
+        float value5 = reading5.read();   
+        float value6 = reading6.read();
+        float pwmvalue = ControlAlgo(value, value2, value3, value4, value5, value6);
+        if (hm10.readable()) {
+
+                    code = hm10.getc(); // Read a single character
+
+                    
+
+                    if (code == 'g') {
+                        while(EndRun == 0) {//so long as EndRun is 0, this loop carries out. 
+                                                                                                                    //SWITCH ON EMITTER HERE AT START OF LOOP <---------------------
+                            // lcd.cls();                          //Clear the screen
+                            // lcd.locate(20,0);                   //Locate at (20,0)
+                            //lcd.printf("start of loop"); //Print text
+                            
+                            //BLE PROCESS DETECTION AND OPERATION
+
+                            if (hm10.readable()) {
+
+                                code = hm10.getc(); // Read a single character
+
+                                if (code == 'a') {//if this value is read by the buggy module, being the StoppingProcess
+                                    StopProcessType = 1;
+                                    StoppingProcess(StopProcessType);
+
+                                }
+                                else if (code == 'b') {//if this value is read by the buggy module, being the StoppingProcess
+                                    StopProcessType = 0;
+                                    StoppingProcess(StopProcessType);
+                                }
+                            }
+                
+                            if(EndRun == 1){
+                                motorLEFT.write(0.5);//stop right wheel
+                                motorRIGHT.write(0.5);//stop left wheel
+                                // lcd.cls();                          //Clear the screen
+                            // lcd.locate(20,0);                   //Locate at (20,0)
+                                //lcd.printf("End of run: called because EndRun = 1 "); //Print text
+                                break;
+                            }
+
+                            //GET READINGS FROM SENSOR--(ignore process of daylight filtering until new PCB assembled)
+                            value = reading1.read();   
+                            value2 = reading2.read();       
+                            value3 = reading3.read();   
+                            value4 = reading4.read();       
+                            value5 = reading5.read();   
+                            value6 = reading6.read();
+                            
+                            float mean = (value+ value2+ value3+ value4+ value5+ value6)/6;
+                            pc.printf(" mean %.5f\n", mean);
+                            if(mean < 0.25 && !lineBreakFlag){
+                                lineBreakFlag=1;
+                                myTimeout.attach(&timeoutLineBreak, 0.2);
+                            
+                             //LineBreakFunction();   
+                            }
+                            else{
+                                encoderValPrevious = 0;
+                                encoderValCurrent = 0;
+                            }
+                        // lcd.cls();
+                            //lcd.locate(20, 0);
+                            //lcd.printf("%.2f, %.2f, /n %.2f, %.2f, %.2f, %.2f", value, value2, value3, value4, value5, value6);
+                            
+                            pwmvalue = ControlAlgo(value, value2, value3, value4, value5, value6);
+                            lcd.locate(20, 0);
+                            //lcd.printf("%.2f", pwmout);
+                        // WheelControl(pwmout);
+                            
+                            float diffSteer = pwmvalue;
+                    
+                            if (pwmvalue>0.4){
+                                diffSteer=0.4;
+                            }
+
+                            else if (pwmvalue<-0.4){
+                                diffSteer=-0.4;
+                            }
+
+                            if(diffSteer < 0){
+                                motorLEFT.write(0.7+(diffSteer*1/2));
+                                motorRIGHT.write(0.7-(diffSteer*1/2));
+                            }
+                                
+                            else if(diffSteer > 0){
+                                motorLEFT.write(0.7+(diffSteer*1/2));
+                                motorRIGHT.write(0.7-(diffSteer*1/2));
+                            }
+
+                            else{
+                                motorRIGHT.write(0.7);
+                                motorLEFT.write(0.7);
+                            }
+
+
+
+
+                            cycle_val += 0.5;
+                            count1Right = RIGHTwheel.getPulses();//gets number of pulses
+                            wait(0.01); //delay time delta
+                            count2Right = RIGHTwheel.getPulses();//gets number of pulses 
+                            delta = 0.01; //time interval declared here
+                            rate_of_changeRight = (count2Right - count1Right) / dt; //measures speed of right wheel
+                            //pc.printf("Count1: %d   Count2: %d  Rate of Change: %.f\n", count1Right, count2Right, rate_of_changeRight);
+                            
+
+
+                            cycle_val += 0.5;
+                            count1Left = LEFTwheel.getPulses();//gets number of pulses
+                            wait(0.01); //delay time delta
+                            count2Left = LEFTwheel.getPulses();//gets number of pulses 
+                            delta = 0.01; //time interval declared here
+                            rate_of_changeLeft = (count2Left - count1Left) / dt; //measures speed of right wheel
+                            //pc.printf("Count1: %d   Count2: %d  Rate of Change: %f\n", count1Left, count2Left, rate_of_changeLeft);
+
+                           // pc.printf("Left: %.3f   Right: %.3f \n", right_wheel_speed, left_wheel_speed);
+
+
+
+
+                            //if pwmout is smaller or larger than some specific intervals, then the line is not being read          <-----
+                            //so, go to line break function and begin a measurement of the circumference of the wheel to measure the
+                            //distance travelled by the buggy.
+
+                            // if((pwmout <  0.05) || (pwmout > 0.95)){           
+                            //     LineBreakFunction();//line is possibly not being read so set the encoder on the wheels to measure distance
+                            //      lcd.cls();                          //Clear the screen
+                            //     lcd.locate(20,10);                   //Locate at (20,0)
+                            //     lcd.printf("Line break detected"); //Print text
+                            // }
+                            // else{
+                            //     encoderVal = 0;//no issue reading the line so the encoder value measuring the distance travelled without reading the line is reset
+                            // }
+                            // //pass along the previously stored values from the previous iteration to use in this run to keep the buggy going the way it was. 
+                            // //use a conditional statement for the assignment of a value to pwmout depending on this value's reading.  
+                            // //if pwmout is again not reading the line still, compare how large the value of the distance travelled by the buggy is
+                            // //if the value is greater than the acceptable distance, carry out StoppingProcess() for the buggy as the line break is 
+                            // //the end of the line. 
+                            // //otherwise, continue the loop again and then check to see if the value is being measured once more. If it is, set the 
+                            // //measurement value to zero and sotp measuring the circumference of the wheel to stop the measuring process. 
+                            // float right_wheel_speed = SlopeDetection(RIGHTwheel); //reads rate of change of the right wheel
+                            // float left_wheel_speed = SlopeDetection(LEFTWheel); //reads rate of change of the left wheel
+                            //  lcd.cls();                          //Clear the screen
+                            // lcd.locate(20,20);                   //Locate at (20,0)
+                            // lcd.printf("Right Wheel Speed %.2f, Left Wheel Speed %.2f", right_wheel_speed, left_wheel_speed); //Print text
+                            // //Flags for conditional statements: Incline slope, Decline slope, Direction straight, Direction bend
+                            // int incline = 0, decline = 0,straight = 0, bend = 0;
+                            //  //NOTE: ADJUSTEMENTS BASED ON CURRENT SPEED MUST FIRST HAVE AVERAGE SPEED CALCULATED BEFORE AS THEY WILL DEPEND ON HAVING THIS AVERAGE VALUE PROVIDED
+                            // //Function to specify whether value is added to average speed calculation
+                            // if ((right_wheel_speed <= left_wheel_speed*(1.10)) && (right_wheel_speed >= left_wheel_speed*(0.9)))//checks each wheel are close to the same speed as each other
+                            //     { //checks values of wheel speeds are within 10% of each other e.g. travelling in a stright line almost
+                            //         straight = 1;//sets flag that buggy is going straight
+                            //         if(cycle_val == 1){// first run of the program so no value is present on the avg_counter so code below would not function correctly. 
+                            //             running_totalSpeed += ((right_wheel_speed+left_wheel_speed)/2);//calculation to find new average
+                            //             avg_counter = ((running_totalSpeed) / cycle_val); //determines new average speed
+                            //             lcd.cls();                          //Clear the screen
+                            //             lcd.locate(100,20);                   //Locate at (20,0)
+                            //             lcd.printf("Average speed: %.2f", avg_counter); //Print text
+                                    
+                            //         }
+                            //         else if ( (((right_wheel_speed+left_wheel_speed)/2)<= avg_counter*(1.10)) && (((right_wheel_speed+left_wheel_speed)/2) >= avg_counter*(0.9)) ) {//checks whether it may be on a slope
+                            //             running_totalSpeed += ((right_wheel_speed+left_wheel_speed)/2);//calculation to find new average
+                            //             avg_counter = ((running_totalSpeed) / cycle_val); //determines new average speed
+                            //         }
+                            //     }
+                            // //Conditional situation to be looking out for: 
+                            //     //straight line path - on flat ground (straight = 1, incline = 0, decline = 0 )
+                            //                       // - on an incline (straight = 1, incline = 1, decline = 0)
+                            //                       // - on a decline (straight = 1, incline = 1, decline = 1)
+                            //     //bended path - on flat ground (straight = 0, incline = 0, decline = 0 )
+                            //                // - on an incline (straight = 0, incline = 1, decline = 0)
+                            //                // - on a decline (straight = 0, incline = 0, decline = 1)
+                            // float current_speed = (right_wheel_speed+left_wheel_speed)/2;//calculating average speed of wheels together. 
+                            // //if incline slope present, i.e. average speed is lower than usual: 
+                            // //WheelControl(pwmout*increase in value)//speed up buggy
+                            // //if decline slope present, i.e average speed is greater than usual: 
+                            // //WheelControl(pwmout*decrease in value)
+                            // //otherwise: just pass along pwmout value as it is.
+                            // if((current_speed < avg_counter*0.9)){//if buggy speed is 10 slower than average then it is likely going on an incline
+                            //     incline = 1;
+                            // }
+                            // else if (current_speed > avg_counter*1.1){
+                            //     decline = 1;
+                            // }
+                            // if(straight == 1)
+                            // {
+                            //     if(incline == 1)
+                            //     {
+                            //         lcd.cls();                          //Clear the screen
+                            //         lcd.locate(20,10);                   //Locate at (20,0)
+                            //         lcd.printf("Straight incline recognised"); //Print text
+                            //         //buggy is straight on incline so speed up
+                            //         pwmout = pwmout*1.10; //pwmout 10% increase
+                            //         WheelControl(pwmout);
+                            //     }
+                            //     else if( decline == 1)
+                            //     {
+                            //         lcd.cls();                          //Clear the screen
+                            //         lcd.locate(20,10);                   //Locate at (20,0)
+                            //         lcd.printf("Straight decline recognised"); //Print text
+                            //         //buggy is straight on decline, so slow down
+                            //         pwmout = pwmout*0.90; //10% decrease
+                            //         WheelControl(pwmout);
+                            //     }
+                            //     else
+                            //     {
+                            //         lcd.cls();                          //Clear the screen
+                            //         lcd.locate(20,10);                   //Locate at (20,0)
+                            //         lcd.printf("Straight flat recognised"); //Print text
+                            //         //buggy is straight on flat track
+                            //         WheelControl(pwmout);
+                            //     }
+                            // }
+
+                            // else if(straight == 0)//on a bending path
+                            // //NOTE: MAY NEED TO BE REMOVED IF DISRUPTIVE TO PROCESS OF PID ALGORITHM
+                            // {
+                            //     if(incline == 1)
+                            //     {
+                            //          lcd.cls();                          //Clear the screen
+                            //         lcd.locate(20,10);                   //Locate at (20,0)
+                            //         lcd.printf("Bending incline recognised"); //Print text
+                            //         //buggy is on bend on incline so stay same speed, acceleration from bend and  incline will even out (???)
+                            //         WheelControl(pwmout);
+                            //     }
+                            //     else if( decline == 1)
+                            //     {
+                            //         lcd.cls();                          //Clear the screen
+                            //         lcd.locate(20,10);                   //Locate at (20,0)
+                            //         lcd.printf("Bending decline recognised"); //Print text
+                            //         //buggy is on bend on decline so speed down greatly due to increase in acceleration. 
+                            //         pwmout = pwmout*0.85; //15% reduction in speed due to greater acceleration conditions
+                            //         WheelControl(pwmout);
+                            //     }
+                            //     else
+                            //     {
+                            //         lcd.cls();                          //Clear the screen
+                            //         lcd.locate(20,10);                   //Locate at (20,0)
+                            //         lcd.printf("Bending flat recognised"); //Print text
+                            //         //buggy is on flat bend so slow down 
+                            //         pwmout = pwmout*0.90; //10% reduction in speed
+                            //         WheelControl(pwmout);
+                            //     }
+                            // }
+                            // //reset values for next run before starting loop again
+                            //  lcd.cls();                          //Clear the screen
+                            // lcd.locate(20,20);                   //Locate at (20,0)
+                            // lcd.printf("Incline value = %d, Decline value = %d, Straight = %d", incline, decline, straight); //Print text
+                            // incline = 0;
+                            // decline = 0;
+                            // straight = 0;
+                            
+                            
+                        }   
+                        if (code == 's') {
+                            i = 1;
+                        }
+                    };
+        }
+    }
+    return 0;
+};

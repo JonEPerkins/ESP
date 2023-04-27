@@ -1,0 +1,318 @@
+
+#include "mbed.h"
+#include "QEI.h" // Encoder Library
+ 
+// Sets up the GPIO as output
+DigitalOut enableDriveBoard(PB_4);
+ 
+// Motor 1 - LEFT Wheel
+DigitalOut leftMotorBipolar(PB_5);
+PwmOut leftMotor(PC_6);
+ 
+// Motor 2 - RIGHT Wheel
+DigitalOut rightMotorBipolar(PB_3);
+PwmOut rightMotor(PC_8);
+ 
+// Encoder
+QEI rightWheel (PA_0, PA_1, NC, 512); // QEI (PinName channelA, PinName channelB, PinName index, int pulsesPerRev, Encoding encoding = X2_ENCODING)
+QEI leftWheel (PC_2, PC_3,NC, 512);
+ 
+// Input readings from line sensors
+AnalogIn reading1(PC_4);
+AnalogIn reading2(PC_5);
+AnalogIn reading3(PA_4);
+AnalogIn reading4(PB_0);
+AnalogIn reading5(PC_1);
+AnalogIn reading6(PC_0);
+ 
+// BLE Connections and definitions
+Serial hm10(PA_11, PA_12); // UART6 TX,RX - bluetooth connection to buggy
+int stopProcessType; // 0 - the buggy stops for any reason except BLE trigger, 1 - buggy stops due to the BLE process being triggered
+ 
+// Serial connection to the PC
+Serial pc(USBTX, USBRX); // TX, RX - microcontroller to PC communication
+ 
+// Initial values for the slope algorithm
+float vp = 0.1, averageVelocity = 1300, velocityError, vProportional, speedPID;
+ 
+// Initial values for the steering algorithm
+float kp = 0.0004, ki = 0.0, kd = 0.000002, dt = 0.0035, turnPID, positionError, previousError = 0, sProportional, sIntegral = 0, sDerivative;
+int lineBreakFlag = 0;
+ 
+// End process global variable, called if the buggy wants to stop the run it is currently carrying out.
+int endRunFlag = 0;
+int encoderValCurrent = 0; // Used to set and reset the value of the encoder when the linebreak function is being carried out
+int encoderValPrevious;
+ 
+//Encoder reading variables
+int count1Right, count2Right, count1Left, count2Left;
+float rate_of_change_right, rate_of_change_left;
+float average_rate_of_change;
+float PWM = 0.7;
+ 
+   
+ 
+// Stering control algorithm
+float SteringControl(float in1, float in2, float in3, float in4, float in5, float in6) {
+ 
+    float currentPosition = ((1*in1 + 1000*in2 + 2000*in3 + 3000*in4 + 4000*in5 + 5000*in6)/(in1 + in2 + in3 + in4 + in5 + in6));
+   
+    positionError = currentPosition - 2500;
+    sProportional = positionError;
+    sIntegral = sIntegral + positionError*dt;
+    sDerivative = (positionError - previousError)/dt;
+    turnPID = kp*sProportional + ki*sIntegral + kd*sDerivative;
+    previousError = positionError;
+ 
+
+    count1Left = leftWheel.getPulses();//gets number of pulses
+    count1Right = rightWheel.getPulses();//gets number of pulses
+                         
+    wait(dt);
+ 
+    count2Right = rightWheel.getPulses();//gets number of pulses
+    count2Left = leftWheel.getPulses();//gets number of pulses
+    rate_of_change_right = (count2Right - count1Right) / dt; //measures speed of right wheel
+    rate_of_change_left = (count2Left - count1Left) / dt; //measures speed of right wheel
+   
+    average_rate_of_change = (rate_of_change_left+rate_of_change_right)/2;
+ 
+    //pc.printf("right wheel speed: %f  left wheel speed: %f  average speed: %.f\n", rate_of_change_right, rate_of_change_left, average_rate_of_change);
+   
+    return turnPID;
+ 
+};
+ 
+// Speed control algorithm
+float SpeedControl(float currentVelocity) {
+ 
+    velocityError =  averageVelocity - currentVelocity;
+    vProportional = velocityError;
+    speedPID = vp*vProportional;
+ 
+    return speedPID;
+ 
+};
+ 
+// 180 degree rotation
+void BLE_180() {
+ 
+    leftMotor.write(0.65); // Stop right wheel
+    rightMotor.write(0.3); // Stop left wheel
+ 
+    wait(1);
+ 
+    leftMotor.write(0.5); // Stop left wheel
+    rightMotor.write(0.5); // Stop right wheel
+ 
+};
+ 
+// Called if the BLE proceess is triggered or the line break function has ended
+void StoppingProcess(int stopFlag = 0) { //By default it is set to zero to expect it to be stopping for other reasons than the BLE trigger
+                                       
+    leftMotor.write(0.5); // Stop right wheel
+    rightMotor.write(0.5); // Stop left wheel
+ 
+    if(stopFlag == 1) {
+ 
+        stopFlag = 0;  // Resets value for next run or when stopping process is needed again
+ 
+        BLE_180();
+ 
+    }
+ 
+    else {
+ 
+        endRunFlag = 1; // Stops the buggy operating as it reaches the end of the line
+ 
+    }
+ 
+};
+ 
+void TimeoutLineBreak() {
+ 
+    float value1 = reading1.read();  
+    float value2 = reading2.read();      
+    float value3 = reading3.read();  
+    float value4 = reading4.read();      
+    float value5 = reading5.read();  
+    float value6 = reading6.read();                    
+    float sensorsMean = (value1 + value2 + value3 + value4 + value5 + value6)/6;
+ 
+    if(sensorsMean < 0.25) {
+       
+        StoppingProcess();
+       
+    }
+ 
+    else {
+ 
+        lineBreakFlag = 0;
+ 
+    }
+ 
+};
+ 
+int main() {
+ 
+    Timeout myTimeout;
+   
+    int i = 0;
+    char commandBLE; // Data packet for BLE sensor
+ 
+    hm10.baud(9600);
+ 
+    while(i == 0) {
+ 
+        enableDriveBoard = 1; // Enable drive board
+        rightMotorBipolar = 1;
+        leftMotorBipolar = 1;
+       
+        leftMotor.period(0.001f); // PWM frequency is set to 1000 Hz
+        rightMotor.period(0.001f);
+ 
+        leftMotor.write(0.5);
+        rightMotor.write(0.5);
+   
+        wait(1);
+       
+        float value1 = reading1.read();  
+        float value2 = reading2.read();      
+        float value3 = reading3.read();  
+        float value4 = reading4.read();      
+        float value5 = reading5.read();  
+        float value6 = reading6.read();
+        float valuePWM = SteringControl(value1, value2, value3, value4, value5, value6);
+ 
+        pc.printf("%.3f  %.3f  %.3f  %.3f  %.3f  %.3f\n", value1, value2, value3, value4, value5, value6); // Outputs actual readings from the sensors to the console
+ 
+        if(hm10.readable()) {
+ 
+            commandBLE = hm10.getc(); // Read a single character from the  phone
+ 
+            if(commandBLE == 'g') {
+ 
+                while(endRunFlag == 0) {
+ 
+                    if(hm10.readable()) {
+ 
+                        commandBLE = hm10.getc();
+ 
+                        if(commandBLE == 'a') { // 180 degree turn
+ 
+                            stopProcessType  = 1;
+ 
+                            StoppingProcess(stopProcessType);
+ 
+                        }
+ 
+                        else if(commandBLE == 'b') { // Complete stop
+ 
+                            stopProcessType  = 0;
+ 
+                            StoppingProcess(stopProcessType);
+ 
+                        }
+ 
+                    }
+       
+                    if(endRunFlag == 1) {
+ 
+                        leftMotor.write(0.5);
+                        rightMotor.write(0.5);
+                       
+                        break;
+ 
+                    }
+ 
+                    value1 = reading1.read();  
+                    value2 = reading2.read();      
+                    value3 = reading3.read();  
+                    value4 = reading4.read();      
+                    value5 = reading5.read();  
+                    value6 = reading6.read();
+                   
+                    float sensorsMean = (value1 + value2 + value3 + value4 + value5 + value6)/6;
+ 
+                    if(sensorsMean < 0.25 && !lineBreakFlag) {
+ 
+                        lineBreakFlag = 1;
+ 
+                        myTimeout.attach(&TimeoutLineBreak, 0.2);
+                   
+                    }
+ 
+                    else {
+ 
+                        encoderValPrevious = 0;
+                        encoderValCurrent = 0;
+                       
+                    }
+ 
+                   
+                   
+                   
+                    if ((rate_of_change_right <= rate_of_change_left*(1.05)) && (rate_of_change_right >= rate_of_change_left*(0.95))){
+                        PWM = SpeedControl(average_rate_of_change);
+                    }
+                    else{
+                        PWM = 0.7;
+                    }
+ 
+
+                           
+ 
+
+                    valuePWM = SteringControl(value1, value2, value3, value4, value5, value6);
+                   
+                    float diffSteer = valuePWM;
+           
+                    if(valuePWM > 0.4) {
+ 
+                        diffSteer = 0.4;
+ 
+                    }
+ 
+                    else if(valuePWM < -0.4) {
+ 
+                        diffSteer = -0.4;
+ 
+                    }
+ 
+                    if(diffSteer < 0) {
+ 
+                        leftMotor.write(PWM + (diffSteer/2));
+                        rightMotor.write(PWM - (diffSteer/2));
+ 
+                    }
+                       
+                    else if(diffSteer > 0){
+ 
+                        leftMotor.write(PWM + (diffSteer/2));
+                        rightMotor.write(PWM - (diffSteer/2));
+ 
+                    }
+ 
+                    else {
+ 
+                        rightMotor.write(PWM);
+                        leftMotor.write(PWM);
+ 
+                    }
+ 
+                }  
+ 
+                i = 1;
+ 
+            }
+ 
+        }
+ 
+    }
+ 
+    return 0;
+ 
+}
+ 
+ 
+ 

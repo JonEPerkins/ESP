@@ -245,99 +245,100 @@ int main() {
                     
 
                     if (code == 'g') {
-                        while(EndRun == 0) {//so long as EndRun is 0, this loop carries out. 
-                                                                                                                    //SWITCH ON EMITTER HERE AT START OF LOOP <---------------------
-                            // lcd.cls();                          //Clear the screen
-                            // lcd.locate(20,0);                   //Locate at (20,0)
-                            //lcd.printf("start of loop"); //Print text
-                            
-                            //BLE PROCESS DETECTION AND OPERATION
-
-                            if (hm10.readable()) {
-
-                                code = hm10.getc(); // Read a single character
-
-                                if (code == 'a') {//if this value is read by the buggy module, being the StoppingProcess
-                                    StopProcessType = 1;
-                                    StoppingProcess(StopProcessType);
-
-                                }
-                                else if (code == 'b') {//if this value is read by the buggy module, being the StoppingProcess
-                                    StopProcessType = 0;
-                                    StoppingProcess(StopProcessType);
-                                }
-                            }
-                
-                            if(EndRun == 1){
-                                motorLEFT.write(0.5);//stop right wheel
-                                motorRIGHT.write(0.5);//stop left wheel
+                        int e = 0;
+                        while(e == 0){
+                            while(EndRun == 0) {//so long as EndRun is 0, this loop carries out. 
+                                                                                                                        //SWITCH ON EMITTER HERE AT START OF LOOP <---------------------
                                 // lcd.cls();                          //Clear the screen
-                            // lcd.locate(20,0);                   //Locate at (20,0)
-                                //lcd.printf("End of run: called because EndRun = 1 "); //Print text
-                                break;
-                            }
-
-                            //GET READINGS FROM SENSOR--(ignore process of daylight filtering until new PCB assembled)
-                            value = reading1.read();   
-                            value2 = reading2.read();       
-                            value3 = reading3.read();   
-                            value4 = reading4.read();       
-                            value5 = reading5.read();   
-                            value6 = reading6.read();
-                            
-                            float mean = (value+ value2+ value3+ value4+ value5+ value6)/6;
-                            pc.printf(" mean %.5f\n", mean);
-                            if(mean < 0.2 && !lineBreakFlag){
-                                lineBreakFlag=1;
-                                myTimeout.attach(&timeoutLineBreak, 0.2);
-                            
-                             //LineBreakFunction();   
-                            }
-                            else{
-                                encoderValPrevious = 0;
-                                encoderValCurrent = 0;
-                            }
-                       
-
-
-                            if ((rate_of_change_right <= rate_of_change_left*(1.05)) && (rate_of_change_right >= rate_of_change_left*(0.95))){
-                                PWM = SpeedControl(average_rate_of_change);
-                             }
-                            else{
-                                PWM = 0.7;
-                            }
-
-
-
-                            pwmvalue = ControlAlgo(value, value2, value3, value4, value5, value6);
-                            lcd.locate(20, 0);
-                           
-                            
-                            float diffSteer = pwmvalue;
-                    
-                            if (pwmvalue>0.4){
-                                diffSteer=0.4;
-                            }
-
-                            else if (pwmvalue<-0.4){
-                                diffSteer=-0.4;
-                            }
-
-                                motorLEFT.write(0.7+(diffSteer*1/2));
-                                motorRIGHT.write(0.7-(diffSteer*1/2));
+                                // lcd.locate(20,0);                   //Locate at (20,0)
+                                //lcd.printf("start of loop"); //Print text
                                 
-                            
+                                //BLE PROCESS DETECTION AND OPERATION
 
+                                if (hm10.readable()) {
 
+                                    code = hm10.getc(); // Read a single character
 
-                          if (hm10.readable()) {
+                                    if (code == 'a') {//if this value is read by the buggy module, being the StoppingProcess
+                                        StopProcessType = 1;
+                                        StoppingProcess(StopProcessType);
 
-                                code = hm10.getc(); // Read a single character
-                                if (code == 's') {
+                                    }
+                                    else if (code == 'b') {//if this value is read by the buggy module, being the StoppingProcess
+                                        StopProcessType = 0;
+                                        StoppingProcess(StopProcessType);
+                                    }
+                                }
+                    
+                                if(EndRun == 1){
+                                    motorLEFT.write(0.5);//stop right wheel
+                                    motorRIGHT.write(0.5);//stop left wheel
+                                    // lcd.cls();                          //Clear the screen
+                                // lcd.locate(20,0);                   //Locate at (20,0)
+                                    //lcd.printf("End of run: called because EndRun = 1 "); //Print text
                                     break;
-                                }   
-                            }
-                    };
+                                }
+
+                                //GET READINGS FROM SENSOR--(ignore process of daylight filtering until new PCB assembled)
+                                value = reading1.read();   
+                                value2 = reading2.read();       
+                                value3 = reading3.read();   
+                                value4 = reading4.read();       
+                                value5 = reading5.read();   
+                                value6 = reading6.read();
+                                
+                                float mean = (value+ value2+ value3+ value4+ value5+ value6)/6;
+                                pc.printf(" mean %.5f\n", mean);
+                                if(mean < 0.2 && !lineBreakFlag){
+                                    lineBreakFlag=1;
+                                    myTimeout.attach(&timeoutLineBreak, 0.2);
+                                
+                                //LineBreakFunction();   
+                                }
+                                else{
+                                    encoderValPrevious = 0;
+                                    encoderValCurrent = 0;
+                                }
+                        
+
+
+                                if ((rate_of_change_right <= rate_of_change_left*(1.05)) && (rate_of_change_right >= rate_of_change_left*(0.95))){
+                                    PWM = SpeedControl(average_rate_of_change);
+                                }
+                                else{
+                                    PWM = 0.7;
+                                }
+
+
+
+                                pwmvalue = ControlAlgo(value, value2, value3, value4, value5, value6);
+                                lcd.locate(20, 0);
+                            
+                                
+                                float diffSteer = pwmvalue;
+                        
+                                if (pwmvalue>0.4){
+                                    diffSteer=0.4;
+                                }
+
+                                else if (pwmvalue<-0.4){
+                                    diffSteer=-0.4;
+                                }
+
+                                    motorLEFT.write(0.7+(diffSteer*1/2));
+                                    motorRIGHT.write(0.7-(diffSteer*1/2));
+                                    
+                              
+                                }
+                                if (hm10.readable()) {
+
+                                    code = hm10.getc(); // Read a single character
+                                    if (code == 's') {
+                                        break;
+                                    }; 
+                                };
+                        };
+                };
         }
     }
     return 0;

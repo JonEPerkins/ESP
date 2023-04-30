@@ -1,0 +1,339 @@
+/**
+* @file group32.h
+* @brief The following code will contain algorithms necessary to drive a buggy along the white line.
+* @author Jonathan Perkins and Iaroslav Bogatyrev
+* @date 07/04/2023
+*/
+
+
+
+#include "mbed.h"
+#include "C12832.h"//lcd screen library
+#include "QEI.h"//encoder library
+
+
+// Sets up the GPIO as output
+DigitalOut enable(PB_4); 
+
+C12832 lcd(D11, D13, D12, D7, D10);     //used to see output from the screen
+
+// Motor 2 - RIGHT Wheel 
+DigitalOut motorRIGHT_bipolar1(PB_3);
+PwmOut motorRIGHT(PC_8);
+
+
+// Motor 1 -- LEFT Wheel 
+DigitalOut motorLEFT_bipolar2(PB_5);
+PwmOut motorLEFT(PC_6);
+
+
+
+
+
+
+// Encoder (QEI (PinName channelA, PinName channelB, PinName index, int pulsesPerRev, Encoding encoding = X2_ENCODING))
+QEI RIGHTWheel (PA_0, PA_1, NC, 512); 
+QEI LEFTWheel (PC_2, PC_3,NC, 512);
+
+//Input readings from Line Sensor
+AnalogIn reading1(PC_4);
+AnalogIn reading2(PC_5);
+AnalogIn reading3(PA_4);
+AnalogIn reading4(PB_0);
+AnalogIn reading5(PC_1);
+AnalogIn reading6(PC_0);
+
+
+//BLE Connections and definitions
+Serial hm10(PA_11, PA_12); // UART6 TX,RX - bluetooth connection to buggy
+Serial pc(USBTX, USBRX); // TX, RX - for microcontroller to pc communication
+int StopProcessType; //if the value reads 0, the buggy stops for any reason except BLE trigger
+                    //if the value is 1, it is due to the BLE process being triggered. 
+
+// Initial values for the slope algorithm
+float vp = 4, averageVelocity = 1350, velocityError, vProportional, speedPID;       
+
+
+//Encoder reading variables
+int count1Right, count2Right, count1Left, count2Left;
+float rate_of_change_right, rate_of_change_left;
+float average_rate_of_change;
+float PWM = 0.7;
+
+
+/**
+* @brief This method will be used calculate the buggy possition in respect to the white line and produce a term that will alter the PWM value written to the motors.
+* @author Jonathan Perkins
+* @param in1, in2, in3, in4, in5, in6 Readings from the sensors
+* @date 20/04/2023
+*/
+
+//Initial values for the control algorithm
+float kp=0.0004, ki=0.000000, kd=0.000002, dt=0.0035, mDiff, currentError;
+static float prevError = 0;
+float proportional, integral=0, derivative;
+int lineBreakFlag = 0;
+
+
+
+
+
+
+
+
+//End process global variable, called if the buggy wants to stop the run it is currently carrying out. 
+int EndRun = 0;
+int encoderValCurrent = 0; //used to set and reset the value of the encoder when the linebreak function is being carried out
+int encoderValPrevious;
+
+
+// Speed control algorithm
+float SpeedControl(float currentVelocity) {
+ 
+    velocityError =  averageVelocity - currentVelocity;
+    vProportional = velocityError;
+    speedPID = vp*vProportional;
+ 
+    return speedPID;
+ 
+};
+
+/**
+* @brief This method will be used to produce a term that will be used for altering the velocity of the buggy.
+* @author Mohammad Hasan Saeed
+* @param currentVelocity The calculated value of velocity based on encoder readings
+* @date 27/04/2023
+*/
+
+
+float ControlAlgo(float in1, float in2, float in3, float in4, float in5, float in6){
+        //CONTROL ALGORITHM SHOWN HERE
+        float pos = ( (1*in1 + 1000*in2 + 2000*in3 + 3000*in4 + 4000*in5 + 5000*in6)/(in1 + in2 + in3 + in4 + in5 + in6));
+        //printf("position is %.3f\n", pos); //pos is from 0 to 5000 where 0 is the first sensor and 5000 the last, 2500 is the centre line
+        currentError = pos-2500;
+        //printf("error is %.3f\n", currentError);
+        proportional = currentError;
+        integral = integral + currentError * dt;
+        derivative = (currentError-prevError)/dt;
+        mDiff = kp*proportional + ki*integral + kd*derivative;
+        //printf("motor diff is %.3f\n", mDiff);
+        prevError = currentError;
+
+
+
+
+        count1Left = LEFTWheel.getPulses();//gets number of pulses
+        count1Right = RIGHTWheel.getPulses();//gets number of pulses
+        wait(dt);
+
+
+
+         count2Right = RIGHTWheel.getPulses();//gets number of pulses
+        count2Left = LEFTWheel.getPulses();//gets number of pulses
+        rate_of_change_right = (count2Right - count1Right) / dt; //measures speed of right wheel
+        rate_of_change_left = (count2Left - count1Left) / dt; //measures speed of right wheel
+    
+        average_rate_of_change = (rate_of_change_left+rate_of_change_right)/2;
+ 
+        return mDiff;
+};
+
+
+void BLE_180(){
+
+        motorLEFT.write(0.50);//stop right wheel
+	    motorRIGHT.write(0.50);//stop left wheel
+        wait(0.5);
+        motorLEFT.write(0.65);//stop right wheel
+	    motorRIGHT.write(0.3);//stop left wheel
+        wait(1);
+        motorLEFT.write(0.50);//stop right wheel
+	    motorRIGHT.write(0.50);//stop left wheel
+    };
+
+/**
+* @brief This method will be used to halt the buggy.
+* @author Jonathan Perkins
+* @date 14/04/2023
+*/
+
+
+void StoppingProcess(int stopvalue = 0){//called if the BLE proceess is triggered or the line break function has ended.      
+                                        //By default it is set to zero to expect it to be stopping for other reasons than the BLE trigger
+    motorLEFT.write(0.5);//stop right wheel
+	motorRIGHT.write(0.5);//stop left wheel
+
+    if (stopvalue == 1){
+        stopvalue = 0;  //resets value for next run or when stopping process is needed again
+        BLE_180();
+    }
+    else{
+        EndRun = 1; //stops the buggy operating as it reaches the end of the line due to a line break that is the end of the line. 
+    }
+};
+
+
+
+
+
+
+
+
+
+
+
+void timeoutLineBreak(){
+    float value = reading1.read();   
+    float value2 = reading2.read();       
+    float value3 = reading3.read();   
+    float value4 = reading4.read();       
+    float value5 = reading5.read();   
+    float value6 = reading6.read();                     
+    float mean = (value+ value2+ value3+ value4+ value5+ value6)/6;
+    if (mean<0.25){
+        StoppingProcess();
+        
+    }
+    else 
+        lineBreakFlag = 0;
+}
+
+
+/**
+* @brief This method will be used for interpretation of BLE commands, setting the required pins of the MC and writing the PWM values based on the function returns.
+* @author Jonathan Perkins and Iaroslav Bogatyrev
+* @date 19/04/2023
+*/
+
+
+int main() {
+    Timeout myTimeout;
+    
+    int i = 0;
+    char code; // Data packet for BLE sensor
+    hm10.baud(9600);
+    while(i == 0){
+        
+        //Initial Configuration of Motor+Wheels
+        // Drive board enabled
+        enable = 1;
+        // Motor 1 and motor 2 set to bipolar mode
+        motorRIGHT_bipolar1 = 1;
+        motorLEFT_bipolar2 = 1; 
+        // PWM frequency is set to 1000 Hz
+        motorLEFT.period(0.001f);
+        motorRIGHT.period(0.001f);
+
+        motorLEFT.write(0.5);
+        motorRIGHT.write(0.5);
+    
+
+        wait(1);
+        //Begin while loop when initial reading of line has been detected               <-----
+        //i.e when reading is close to 2500
+        float value = reading1.read();   
+        float value2 = reading2.read();       
+        float value3 = reading3.read();   
+        float value4 = reading4.read();       
+        float value5 = reading5.read();   
+        float value6 = reading6.read();
+        float pwmvalue = ControlAlgo(value, value2, value3, value4, value5, value6);
+        if (hm10.readable()) {
+
+                    code = hm10.getc(); // Read a single character
+
+                    
+
+                    if (code == 'g') {
+                        while(EndRun == 0) {//so long as EndRun is 0, this loop carries out. 
+                                                                                                                    //SWITCH ON EMITTER HERE AT START OF LOOP <---------------------
+                            // lcd.cls();                          //Clear the screen
+                            // lcd.locate(20,0);                   //Locate at (20,0)
+                            //lcd.printf("start of loop"); //Print text
+                            
+                            //BLE PROCESS DETECTION AND OPERATION
+
+                            if (hm10.readable()) {
+
+                                code = hm10.getc(); // Read a single character
+
+                                if (code == 'a') {//if this value is read by the buggy module, being the StoppingProcess
+                                    StopProcessType = 1;
+                                    StoppingProcess(StopProcessType);
+
+                                }
+                                else if (code == 'b') {//if this value is read by the buggy module, being the StoppingProcess
+                                    StopProcessType = 0;
+                                    StoppingProcess(StopProcessType);
+                                }
+                            }
+                
+                            if(EndRun == 1){
+                                motorLEFT.write(0.5);//stop right wheel
+                                motorRIGHT.write(0.5);//stop left wheel
+                                // lcd.cls();                          //Clear the screen
+                            // lcd.locate(20,0);                   //Locate at (20,0)
+                                //lcd.printf("End of run: called because EndRun = 1 "); //Print text
+                                break;
+                            }
+
+                            //GET READINGS FROM SENSOR--(ignore process of daylight filtering until new PCB assembled)
+                            value = reading1.read();   
+                            value2 = reading2.read();       
+                            value3 = reading3.read();   
+                            value4 = reading4.read();       
+                            value5 = reading5.read();   
+                            value6 = reading6.read();
+                            
+                            float mean = (value+ value2+ value3+ value4+ value5+ value6)/6;
+                            pc.printf(" mean %.5f\n", mean);
+                            if(mean < 0.25 && !lineBreakFlag){
+                                lineBreakFlag=1;
+                                myTimeout.attach(&timeoutLineBreak, 0.2);
+                            
+                             //LineBreakFunction();   
+                            }
+                            else{
+                                encoderValPrevious = 0;
+                                encoderValCurrent = 0;
+                            }
+                       
+
+
+                            if ((rate_of_change_right <= rate_of_change_left*(1.05)) && (rate_of_change_right >= rate_of_change_left*(0.95))){
+                                PWM = SpeedControl(average_rate_of_change);
+                             }
+                            else{
+                                PWM = 0.7;
+                            }
+
+
+
+                            pwmvalue = ControlAlgo(value, value2, value3, value4, value5, value6);
+                            lcd.locate(20, 0);
+                           
+                            
+                            float diffSteer = pwmvalue;
+                    
+                            if (pwmvalue>0.4){
+                                diffSteer=0.4;
+                            }
+
+                            else if (pwmvalue<-0.4){
+                                diffSteer=-0.4;
+                            }
+
+                                motorLEFT.write(PWM+(diffSteer*1/2));
+                                motorRIGHT.write(PWM-(diffSteer*1/2));
+                                
+                            
+
+
+
+                           
+                        }   
+                    };
+        }
+    }
+    return 0;
+};
